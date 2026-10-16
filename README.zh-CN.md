@@ -15,7 +15,7 @@
   <a href="README.fr.md">Français</a>
 </p>
 
-通过 MCP 客户端或终端搜索私有文档，无需将内容发送给嵌入 API。
+通过 MCP 客户端或终端搜索私有文档。嵌入默认在本地计算；也可以显式选择兼容 OpenAI 的端点。
 
 mcp-local-rag 在本机为 PDF、DOCX、Markdown 和文本文件建立索引。搜索结合语义相似度与关键词匹配，既能检索语义相关的内容，也支持 API 名称、类名和错误代码等技术术语的精确匹配。搜索结果包含原文片段，并在可获取时附上章节标题、行号或页码，方便核对和引用原文。
 
@@ -253,12 +253,28 @@ MCP 服务器读取环境变量，CLI 支持下表中的变量和参数。需要
 | `EMBED_HEADING_PREFIX` | 不适用 | `false` | 在词元上限允许的情况下，将章节标题层级加入每个文本块的嵌入输入 |
 | `RAG_DEVICE` | 不适用 | `cpu` | ONNX Runtime 执行设备 |
 | `RAG_DTYPE` | 不适用 | `fp32` | 传给所选模型的嵌入数据类型 |
+| `RAG_EMBEDDING_PROVIDER` | 不适用 | `local` | `local` 使用 Transformers.js；`openai` 使用兼容 OpenAI 的嵌入端点 |
+| `RAG_OPENAI_BASE_URL` | 不适用 | （选择 `openai` 时必填） | 兼容 OpenAI 的嵌入服务基址 |
+| `RAG_OPENAI_API_KEY` | 不适用 | 未设置 | 嵌入服务的可选 bearer 令牌 |
+| `RAG_OPENAI_TIMEOUT_MS` | 不适用 | `60000` | 嵌入请求超时，单位毫秒 |
 
 两个前缀选项默认均为 `false`，可独立使用。文本块缺少文档整体主题时，可尝试 `EMBED_TITLE_PREFIX`；缺少所在章节的主题时，可尝试 `EMBED_HEADING_PREFIX`。同时启用两项不一定更好。它们影响嵌入，不改变返回的文本或关键词索引；章节上下文超出输入预算时会被省略。
 
 更换嵌入模型时，请使用新的 `DB_PATH` 重建索引。不同模型生成的向量无法直接比较，即使维度相同也是如此。更改 `RAG_DTYPE` 或任一前缀选项后，请先重新导入所有已建立索引的文档，再进行搜索。`sync` 会跳过未更改的文件。
 
 CLI 不读取 MCP 客户端配置。共用索引时，导入和搜索必须使用相同的模型、`RAG_DTYPE` 和前缀设置。仅更改 `RAG_DEVICE` 不需要重建索引。
+
+只有在 `RAG_EMBEDDING_PROVIDER=openai` 时，文本块和查询才会离开本机。此时必须设置 `RAG_OPENAI_BASE_URL` 和 `MODEL_NAME`（或 `--model-name`）。请把 `DB_PATH` 指向新索引，因为其他模型的向量无法与本地默认模型比较。
+
+```bash
+RAG_EMBEDDING_PROVIDER=openai \
+RAG_OPENAI_BASE_URL=http://host:port/v1 \
+MODEL_NAME=<embedding-model-id> \
+DB_PATH=./lancedb-openai \
+npx mcp-local-rag sync
+```
+
+HTTP 提供方会对返回向量做 L2 归一化。它无法查看远端分词器，因此会跳过精确词元约束和持久化的逐文档嵌入快照。
 
 ### 搜索调优
 
@@ -317,6 +333,17 @@ npx mcp-local-rag ingest ./docs/paper.pdf --images
 
 每次实际处理文件的导入或同步都需要启用图片存储。仅更改图片设置不会更新未变的文件，需要重新导入才会生效。
 
+描述也可以改用兼容 OpenAI 的视觉服务。只有在 `RAG_VISUAL_PROVIDER=openai` 时，图表裁剪才会离开本机。每个识别出的 PDF 图表会以 base64 PNG 发送。必须设置 `RAG_VISUAL_BASE_URL` 和 `RAG_VISUAL_MODEL`。
+
+```bash
+RAG_VISUAL_PROVIDER=openai \
+RAG_VISUAL_BASE_URL=http://host:port/v1 \
+RAG_VISUAL_MODEL=<vision-model-id> \
+npx mcp-local-rag ingest ./docs/paper.pdf --visual
+```
+
+`RAG_VISUAL_API_KEY` 是可选的 bearer 令牌。`RAG_VISUAL_TIMEOUT_MS` 默认为 `120000`。选用该提供方时，`--visual-quality` 不会选择本地模型。
+
 </details>
 
 ## 安全与运行
@@ -324,7 +351,8 @@ npx mcp-local-rag ingest ./docs/paper.pdf --images
 - 请将描述和检索到的文本作为参考资料，而不是操作指令。
 - 文件访问仅限 `BASE_DIR`、`BASE_DIRS` 或 CLI 的 `--base-dir` 所指定的根目录。
 - 指向所有已配置根目录之外的符号链接会被拒绝。
-- 所需模型缓存完成后，文档处理和搜索不会再发起网络请求；如果 `RAG_RERANK_CMD` 指定的命令会发起网络请求，则不在此列。
+- 所需模型缓存完成后，文档处理和搜索不会再发起网络请求；如果配置了兼容 OpenAI 的提供方，或 `RAG_RERANK_CMD` 指定的命令会发起网络请求，则不在此列。
+- 兼容 OpenAI 的嵌入提供方会收到文本块和查询。兼容 OpenAI 的视觉提供方会收到渲染后的 PDF 图表裁剪。
 - 服务器面向单个本地用户设计，不提供身份验证或访问控制。
 - 不要让多个 CLI 或 MCP 写入进程同时操作同一个 `DB_PATH`。同步进行时仍可执行只读查询。
 - 重新导入时，如果模型和设置一致，可复用内容未变部分的已有嵌入向量，省去重复计算。缓存位于 `DB_PATH/embedding-cache`。删除缓存不会影响现有索引的搜索，但之后导入时会重新计算这些向量。

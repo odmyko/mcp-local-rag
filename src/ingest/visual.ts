@@ -2,20 +2,19 @@ import type { AtomicTextRange, SemanticChunker, TextChunk } from '../chunker/ind
 import type { EmbedderInterface } from '../chunker/semantic-chunker.js'
 import type { DocumentParser } from '../parser/index.js'
 import type { FilteredTextFragment } from '../parser/pdf-filter.js'
-import type { DetectedVisualRegion, ProcessedVisualRegion } from '../pdf-visual/types.js'
+import type {
+  CaptionerConfig,
+  DetectedVisualRegion,
+  ProcessedVisualRegion,
+} from '../pdf-visual/types.js'
 import type { HeadingAnchor, SourceMap } from '../utils/source-context.js'
-import type { QualityProfile } from '../utils/visual-profile.js'
 import type { VisualAttachment } from '../vectordb/types.js'
 import { buildChunksAndEmbeddings, createVisualAttachment, findNearestChunk } from './compute.js'
 
+export type { CaptionerConfig }
+
 export interface VisualPdfParser {
   parsePdfPages: DocumentParser['parsePdfPages']
-}
-
-export interface CaptionerConfig {
-  profile: QualityProfile
-  cacheDir: string
-  device?: string | undefined
 }
 
 /** Collaborators one visual PDF ingest run needs, injected as a unit. */

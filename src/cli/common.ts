@@ -2,6 +2,8 @@
 // plus base-directory resolution shared by every subcommand that scans files.
 
 import { Embedder } from '../embedder/index.js'
+import { OpenAIEmbedder } from '../embedder/openai.js'
+import type { EmbeddingProvider } from '../embedder/provider.js'
 import {
   type BaseDirsConfig,
   type BaseDirsConfigWarning,
@@ -64,7 +66,7 @@ export function createVectorStore(config: ResolvedGlobalConfig): VectorStore {
  * Create an uninitialized Embedder from resolved global config.
  * Callers are responsible for managing the Embedder lifecycle.
  */
-export function createEmbedder(config: ResolvedGlobalConfig): Embedder {
+export function createEmbedder(config: ResolvedGlobalConfig): EmbeddingProvider {
   const embedderConfig: ConstructorParameters<typeof Embedder>[0] = {
     modelPath: config.modelName,
     batchSize: 16,
@@ -91,6 +93,19 @@ export function createEmbedder(config: ResolvedGlobalConfig): Embedder {
   }
   if (headingPrefix.value) {
     embedderConfig.headingPrefix = true
+  }
+  if (config.embeddingProvider === 'openai') {
+    if (!config.openaiBaseUrl) {
+      throw new Error('RAG_OPENAI_BASE_URL is required when RAG_EMBEDDING_PROVIDER=openai.')
+    }
+    return new OpenAIEmbedder({
+      baseUrl: config.openaiBaseUrl,
+      timeoutMs: config.openaiTimeoutMs,
+      model: config.modelName,
+      ...(config.openaiApiKey ? { apiKey: config.openaiApiKey } : {}),
+      ...(embedderConfig.titlePrefix ? { titlePrefix: true } : {}),
+      ...(embedderConfig.headingPrefix ? { headingPrefix: true } : {}),
+    })
   }
   return new Embedder(embedderConfig)
 }

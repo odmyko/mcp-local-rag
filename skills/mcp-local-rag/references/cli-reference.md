@@ -15,6 +15,24 @@ Shared across all CLI subcommands.
 
 Priority: CLI flags > environment variables > defaults.
 
+## Embedding and visual providers
+
+The default embedding path is local Transformers.js. Set `RAG_EMBEDDING_PROVIDER=openai` to send chunks and queries to an OpenAI-compatible embeddings endpoint. `RAG_OPENAI_BASE_URL` and `MODEL_NAME` are then required. Use a new `DB_PATH` when the embedding model changes.
+
+Set `RAG_VISUAL_PROVIDER=openai` together with `--visual` to send PDF figure crops to an OpenAI-compatible chat endpoint. `RAG_VISUAL_BASE_URL` and `RAG_VISUAL_MODEL` are then required. Neither base URL has a default.
+
+| Env Var | Default | Description |
+|---------|---------|-------------|
+| `RAG_EMBEDDING_PROVIDER` | `local` | `local` or `openai` |
+| `RAG_OPENAI_BASE_URL` | required when `openai` | Embedding endpoint base URL |
+| `RAG_OPENAI_API_KEY` | unset | Optional bearer token |
+| `RAG_OPENAI_TIMEOUT_MS` | `60000` | Embedding request timeout |
+| `RAG_VISUAL_PROVIDER` | `local` | `local` or `openai` |
+| `RAG_VISUAL_BASE_URL` | required when `openai` | Vision chat endpoint base URL |
+| `RAG_VISUAL_MODEL` | required when `openai` | Model id loaded by that server |
+| `RAG_VISUAL_API_KEY` | unset | Optional bearer token |
+| `RAG_VISUAL_TIMEOUT_MS` | `120000` | Caption request timeout |
+
 ## Commands
 
 ### ingest

@@ -119,7 +119,7 @@ src/
   server/         # MCP tool handlers
   parser/         # Document parsing (PDF, DOCX, TXT, Markdown, HTML)
   chunker/        # Semantic text chunking
-  embedder/       # Transformers.js embeddings
+  embedder/       # Transformers.js embeddings, or an optional OpenAI-compatible HTTP endpoint
   vectordb/       # LanceDB operations
   __tests__/      # Test suites
 ```

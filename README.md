@@ -22,8 +22,8 @@ Registry](https://img.shields.io/badge/MCP-Registry-green.svg)](https://registry
   <a href="README.fr.md">Français</a>
 </p>
 
-Search private documents from an MCP client or the terminal without sending them to an
-embedding API.
+Search private documents from an MCP client or the terminal. Embeddings run locally by default;
+an OpenAI-compatible endpoint can be selected explicitly.
 
 mcp-local-rag indexes PDF, DOCX, Markdown, and text files on your machine. Search combines
 semantic similarity with keyword matching, so queries can match both intent and exact technical
@@ -294,6 +294,10 @@ mean pooling and L2 normalization, which this tool uses to produce embeddings.
 | `EMBED_HEADING_PREFIX` | N/A | `false` | Add the heading hierarchy to each chunk's embedding input when it fits |
 | `RAG_DEVICE` | N/A | `cpu` | ONNX Runtime execution device |
 | `RAG_DTYPE` | N/A | `fp32` | Embedding dtype passed to the selected model |
+| `RAG_EMBEDDING_PROVIDER` | N/A | `local` | `local` uses Transformers.js; `openai` uses an OpenAI-compatible embeddings endpoint |
+| `RAG_OPENAI_BASE_URL` | N/A | (required when `openai`) | Base URL for the OpenAI-compatible embedding service |
+| `RAG_OPENAI_API_KEY` | N/A | (unset) | Optional bearer token for the embedding service |
+| `RAG_OPENAI_TIMEOUT_MS` | N/A | `60000` | Embedding request timeout in milliseconds |
 
 Both prefix options default to `false` and work independently. Try `EMBED_TITLE_PREFIX` when a
 passage needs the document’s overall topic, or `EMBED_HEADING_PREFIX` when it needs its
@@ -309,6 +313,21 @@ The CLI does not read MCP client configuration. When sharing an index, use the s
 `RAG_DTYPE`, and prefix settings for ingestion and search. A change to `RAG_DEVICE` alone does
 not require a new index.
 
+Chunks and queries stay on this machine unless `RAG_EMBEDDING_PROVIDER=openai`. That setting
+requires `RAG_OPENAI_BASE_URL` and `MODEL_NAME` (or `--model-name`). Point `DB_PATH` at a new
+index, because vectors from another model are not comparable with the local default.
+
+```bash
+RAG_EMBEDDING_PROVIDER=openai \
+RAG_OPENAI_BASE_URL=http://host:port/v1 \
+MODEL_NAME=<embedding-model-id> \
+DB_PATH=./lancedb-openai \
+npx mcp-local-rag sync
+```
+
+The HTTP provider L2-normalizes returned vectors. It cannot inspect the remote tokenizer, so
+exact token containment and persistent per-document embedding snapshots are disabled.
+
 ### Search Tuning
 
 The first four settings below apply to both MCP and CLI queries. To give exact terms more
@@ -321,8 +340,15 @@ reranking is MCP-only.
 | `RAG_GROUPING` | (not set) | `similar` keeps the first relevance group; `related` keeps up to two, using significant vector-distance gaps as boundaries. |
 | `RAG_MAX_DISTANCE` | (not set) | Filter out low-relevance results (e.g., `0.5`). |
 | `RAG_MAX_FILES` | (not set) | Limit results to top N files (e.g., `1` for single best file). |
+| `RAG_RERANK_URL` | (not set) | MCP only: Text Embeddings Inference origin. The server POSTs to `{url}/rerank`. |
 | `RAG_RERANK_CMD` | (not set) | MCP only: external command; `{query}` passes the query and `{top}` the requested result count. |
 | `RAG_RERANK_TIMEOUT_MS` | `10000` | Time budget per rerank call in milliseconds (100–600000). |
+
+### HTTP reranking (`RAG_RERANK_URL`)
+
+Set this to the origin of a [Text Embeddings Inference](https://github.com/huggingface/text-embeddings-inference) reranker, for example `http://host:8002`. Query text and the candidate passages are sent to `{url}/rerank`. Set this or `RAG_RERANK_CMD`, not both.
+
+The returned `score` is the rank within that response, so a lower value is better. `rerankScore` keeps the service's own score. A failure, timeout, or unusable response keeps the original order. Passages leave this machine only when the URL is set.
 
 ### External Reranking (`RAG_RERANK_CMD`)
 
@@ -384,6 +410,21 @@ file normally. To retry failed captions, re-ingest with the desired visual profi
 Image storage must be enabled on each ingestion or sync that processes the file. Changing the
 image setting alone does not refresh unchanged files; re-ingest them to apply it.
 
+Captioning can instead use an OpenAI-compatible vision server. Figure crops leave the machine
+only when `RAG_VISUAL_PROVIDER=openai`. Each detected PDF figure is sent as a base64 PNG.
+`RAG_VISUAL_BASE_URL` and `RAG_VISUAL_MODEL` are required, and the model id must name a model
+loaded by that server.
+
+```bash
+RAG_VISUAL_PROVIDER=openai \
+RAG_VISUAL_BASE_URL=http://host:port/v1 \
+RAG_VISUAL_MODEL=<vision-model-id> \
+npx mcp-local-rag ingest ./docs/paper.pdf --visual
+```
+
+`RAG_VISUAL_API_KEY` optionally supplies a bearer token. `RAG_VISUAL_TIMEOUT_MS` defaults to
+`120000`. When the remote provider is selected, `--visual-quality` does not select a local model.
+
 </details>
 
 ## Security and Operation
@@ -392,7 +433,9 @@ image setting alone does not refresh unchanged files; re-ingest them to apply it
 - File access is restricted to `BASE_DIR`, `BASE_DIRS`, or CLI `--base-dir` roots.
 - Symlinks that resolve outside every configured root are rejected.
 - Document processing and search make no network requests after the required models are cached,
-  unless `RAG_RERANK_CMD` names a command that makes them.
+  unless an OpenAI-compatible provider or `RAG_RERANK_CMD` is configured.
+- An OpenAI-compatible embedding provider receives document chunks and queries. An
+  OpenAI-compatible visual provider receives rendered PDF figure crops.
 - The server is designed for one local user and does not provide authentication or access control.
 - Do not run multiple CLI or MCP writers against the same `DB_PATH`. Read-only queries can run
   while a sync is active.

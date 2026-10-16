@@ -5,7 +5,7 @@ import { resolve, sep } from 'node:path'
 
 import { SemanticChunker } from '../chunker/index.js'
 import { DocumentEmbeddingSession } from '../embedder/embedding-snapshot.js'
-import type { Embedder } from '../embedder/index.js'
+import type { EmbeddingProvider } from '../embedder/provider.js'
 import {
   buildPreparedFileVectorChunks,
   type PrepareFileForIngestOptions,
@@ -285,7 +285,7 @@ export interface SingleFileIngestCollaborators {
   dbPath: string
   parser: DocumentParser
   chunker: SemanticChunker
-  embedder: Embedder
+  embedder: EmbeddingProvider
   vectorStore: VectorStore
 }
 
@@ -350,6 +350,24 @@ export function buildFileIngestOptions(
 ): PrepareFileForIngestOptions {
   if (request.visualProfile === null) {
     return { images: request.images }
+  }
+  if (globalConfig.visualProvider === 'openai') {
+    if (!globalConfig.visualBaseUrl || !globalConfig.visualModel) {
+      throw new Error(
+        'RAG_VISUAL_BASE_URL and RAG_VISUAL_MODEL are required when RAG_VISUAL_PROVIDER=openai.'
+      )
+    }
+    return {
+      images: request.images,
+      captioner: {
+        provider: 'openai',
+        profile: request.visualProfile,
+        baseUrl: globalConfig.visualBaseUrl,
+        model: globalConfig.visualModel,
+        timeoutMs: globalConfig.visualTimeoutMs,
+        ...(globalConfig.visualApiKey ? { apiKey: globalConfig.visualApiKey } : {}),
+      },
+    }
   }
   return {
     images: request.images,

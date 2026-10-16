@@ -24,7 +24,8 @@ export class VlmError extends AppError {
  * `profile` resolves it, so prompt, chat template, processor signature,
  * generation options and model class stay coherent together.
  */
-export interface CaptionerConfig {
+export interface LocalCaptionerConfig {
+  provider?: 'local'
   /** Visual-quality profile — selects the underlying VLM family. */
   profile: QualityProfile
   /** Model cache directory (shared with the embedder via `env.cacheDir`). */
@@ -32,6 +33,18 @@ export interface CaptionerConfig {
   /** Execution device passed through to Transformers.js model loading. */
   device?: string | undefined
 }
+
+export interface OpenAICaptionerConfig {
+  provider: 'openai'
+  /** Stored visual intent for sync compatibility; remote generation ignores it. */
+  profile: QualityProfile
+  baseUrl: string
+  apiKey?: string
+  model: string
+  timeoutMs: number
+}
+
+export type CaptionerConfig = LocalCaptionerConfig | OpenAICaptionerConfig
 
 /**
  * Returns the caption, or `null` when the model produced nothing after

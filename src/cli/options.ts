@@ -1,5 +1,6 @@
 // Shared CLI global options — parsed before subcommand routing
 
+import type { EmbeddingProviderKind } from '../embedder/provider.js'
 import { MAX_CHUNK_MIN_LENGTH, MAX_FILE_SIZE_LIMIT } from '../utils/limits.js'
 import { checkSensitivePath } from '../utils/sensitive-path.js'
 import { isQualityProfile, type QualityProfile } from '../utils/visual-profile.js'
@@ -125,6 +126,15 @@ export interface ResolvedGlobalConfig {
   dbPath: string
   cacheDir: string
   modelName: string
+  embeddingProvider: EmbeddingProviderKind
+  openaiBaseUrl?: string
+  openaiApiKey?: string
+  openaiTimeoutMs: number
+  visualProvider: EmbeddingProviderKind
+  visualBaseUrl?: string
+  visualModel?: string
+  visualApiKey?: string
+  visualTimeoutMs: number
   /** Search tuning, read from the same environment variables the MCP server uses. */
   maxDistance?: number
   grouping?: GroupingMode
@@ -140,6 +150,14 @@ export const GLOBAL_DEFAULTS = {
   dbPath: './lancedb/',
   cacheDir: './models/',
   modelName: 'Xenova/all-MiniLM-L6-v2',
+} as const
+
+export const OPENAI_EMBEDDING_DEFAULTS = {
+  timeoutMs: 60_000,
+} as const
+
+export const OPENAI_VISUAL_DEFAULTS = {
+  timeoutMs: 120_000,
 } as const
 
 // ============================================
@@ -319,55 +337,193 @@ export function parseHybridWeight(value: string | undefined): ParseResult<number
   return { value: parsed }
 }
 
-export function resolveGlobalConfig(options: GlobalOptions): ResolvedGlobalConfig {
-  const dbPath = options.dbPath ?? process.env['DB_PATH'] ?? GLOBAL_DEFAULTS.dbPath
-  const cacheDir = options.cacheDir ?? process.env['CACHE_DIR'] ?? GLOBAL_DEFAULTS.cacheDir
-  const modelName = options.modelName ?? process.env['MODEL_NAME'] ?? GLOBAL_DEFAULTS.modelName
+export function resolveProvider(
+  value: string | undefined,
+  variableName: string
+): EmbeddingProviderKind {
+  const normalized = value?.trim().toLowerCase() || 'local'
+  if (normalized === 'local' || normalized === 'openai') {
+    return normalized
+  }
+  throw new Error(
+    `Invalid ${variableName} value: "${value?.slice(0, 100)}". Expected "local" or "openai".`
+  )
+}
 
-  // Validate paths
+export function resolveHttpBaseUrl(value: string | undefined, variableName: string): string {
+  const candidate = value?.trim() ?? ''
+  if (!candidate) {
+    throw new Error(`${variableName} is required.`)
+  }
+  let parsed: URL
+  try {
+    parsed = new URL(candidate)
+  } catch {
+    throw new Error(`Invalid ${variableName} value: expected an absolute HTTP(S) URL.`)
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error(`Invalid ${variableName} value: expected an HTTP(S) URL.`)
+  }
+  return candidate.replace(/\/+$/, '')
+}
+
+export function resolveProviderBaseUrl(
+  value: string | undefined,
+  variableName: string,
+  providerVariable: string
+): string {
+  if (!value?.trim()) {
+    throw new Error(`${variableName} is required when ${providerVariable}=openai.`)
+  }
+  return resolveHttpBaseUrl(value, variableName)
+}
+
+export function resolveHttpTimeout(
+  value: string | undefined,
+  fallback: number,
+  variableName: string
+): number {
+  if (!value) {
+    return fallback
+  }
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed) || parsed < 100 || parsed > 600_000) {
+    throw new Error(`Invalid ${variableName} value: expected an integer from 100 to 600000.`)
+  }
+  return parsed
+}
+
+function resolveEmbeddingProviderConfig(
+  options: GlobalOptions
+): Pick<
+  ResolvedGlobalConfig,
+  'embeddingProvider' | 'modelName' | 'openaiBaseUrl' | 'openaiApiKey' | 'openaiTimeoutMs'
+> {
+  const embeddingProvider = resolveProvider(
+    process.env['RAG_EMBEDDING_PROVIDER'],
+    'RAG_EMBEDDING_PROVIDER'
+  )
+  const configuredModelName = options.modelName ?? process.env['MODEL_NAME']
+  if (embeddingProvider === 'openai' && !configuredModelName) {
+    throw new Error('MODEL_NAME or --model-name is required when RAG_EMBEDDING_PROVIDER=openai.')
+  }
+  return {
+    embeddingProvider,
+    modelName: configuredModelName ?? GLOBAL_DEFAULTS.modelName,
+    openaiTimeoutMs: resolveHttpTimeout(
+      process.env['RAG_OPENAI_TIMEOUT_MS'],
+      OPENAI_EMBEDDING_DEFAULTS.timeoutMs,
+      'RAG_OPENAI_TIMEOUT_MS'
+    ),
+    ...(embeddingProvider === 'openai'
+      ? {
+          openaiBaseUrl: resolveProviderBaseUrl(
+            process.env['RAG_OPENAI_BASE_URL'],
+            'RAG_OPENAI_BASE_URL',
+            'RAG_EMBEDDING_PROVIDER'
+          ),
+        }
+      : {}),
+    ...(process.env['RAG_OPENAI_API_KEY']
+      ? { openaiApiKey: process.env['RAG_OPENAI_API_KEY'] }
+      : {}),
+  }
+}
+
+function resolveVisualProviderConfig(): Pick<
+  ResolvedGlobalConfig,
+  'visualProvider' | 'visualBaseUrl' | 'visualModel' | 'visualApiKey' | 'visualTimeoutMs'
+> {
+  const visualProvider = resolveProvider(process.env['RAG_VISUAL_PROVIDER'], 'RAG_VISUAL_PROVIDER')
+  if (visualProvider === 'openai' && !process.env['RAG_VISUAL_MODEL']) {
+    throw new Error('RAG_VISUAL_MODEL is required when RAG_VISUAL_PROVIDER=openai.')
+  }
+  return {
+    visualProvider,
+    visualTimeoutMs: resolveHttpTimeout(
+      process.env['RAG_VISUAL_TIMEOUT_MS'],
+      OPENAI_VISUAL_DEFAULTS.timeoutMs,
+      'RAG_VISUAL_TIMEOUT_MS'
+    ),
+    ...(visualProvider === 'openai'
+      ? {
+          visualBaseUrl: resolveProviderBaseUrl(
+            process.env['RAG_VISUAL_BASE_URL'],
+            'RAG_VISUAL_BASE_URL',
+            'RAG_VISUAL_PROVIDER'
+          ),
+        }
+      : {}),
+    ...(process.env['RAG_VISUAL_MODEL'] ? { visualModel: process.env['RAG_VISUAL_MODEL'] } : {}),
+    ...(process.env['RAG_VISUAL_API_KEY']
+      ? { visualApiKey: process.env['RAG_VISUAL_API_KEY'] }
+      : {}),
+  }
+}
+
+function validateGlobalPathsAndModel(
+  dbPath: string,
+  cacheDir: string,
+  modelName: string,
+  provider: EmbeddingProviderKind
+): void {
   const dbPathError = validatePath(dbPath, '--db-path')
   if (dbPathError) {
     console.error(dbPathError)
     process.exit(1)
   }
-
   const cacheDirError = validatePath(cacheDir, '--cache-dir')
   if (cacheDirError) {
     console.error(cacheDirError)
     process.exit(1)
   }
-
-  // Validate model name
-  const modelNameError = validateModelName(modelName)
+  const modelNameError = provider === 'local' ? validateModelName(modelName) : undefined
   if (modelNameError) {
     console.error(modelNameError)
     process.exit(1)
   }
+}
 
-  // stderr, so a JSON-output subcommand keeps stdout parseable.
-  const maxDistance = parseMaxDistance(process.env['RAG_MAX_DISTANCE'])
-  const grouping = parseGroupingMode(process.env['RAG_GROUPING'])
-  const maxFiles = parseMaxFiles(process.env['RAG_MAX_FILES'])
-  const hybridWeight = parseHybridWeight(process.env['RAG_HYBRID_WEIGHT'])
-  for (const { warning } of [maxDistance, grouping, maxFiles, hybridWeight]) {
+function applySearchSettings(config: ResolvedGlobalConfig): void {
+  const settings = {
+    maxDistance: parseMaxDistance(process.env['RAG_MAX_DISTANCE']),
+    grouping: parseGroupingMode(process.env['RAG_GROUPING']),
+    maxFiles: parseMaxFiles(process.env['RAG_MAX_FILES']),
+    hybridWeight: parseHybridWeight(process.env['RAG_HYBRID_WEIGHT']),
+  }
+  for (const { warning } of Object.values(settings)) {
     if (warning !== undefined) {
       console.error(`Warning: ${warning}`)
     }
   }
+  if (settings.maxDistance.value !== undefined) {
+    config.maxDistance = settings.maxDistance.value
+  }
+  if (settings.grouping.value !== undefined) {
+    config.grouping = settings.grouping.value
+  }
+  if (settings.maxFiles.value !== undefined) {
+    config.maxFiles = settings.maxFiles.value
+  }
+  if (settings.hybridWeight.value !== undefined) {
+    config.hybridWeight = settings.hybridWeight.value
+  }
+}
 
-  const config: ResolvedGlobalConfig = { dbPath, cacheDir, modelName }
-  if (maxDistance.value !== undefined) {
-    config.maxDistance = maxDistance.value
+export function resolveGlobalConfig(options: GlobalOptions): ResolvedGlobalConfig {
+  const dbPath = options.dbPath ?? process.env['DB_PATH'] ?? GLOBAL_DEFAULTS.dbPath
+  const cacheDir = options.cacheDir ?? process.env['CACHE_DIR'] ?? GLOBAL_DEFAULTS.cacheDir
+  const embedding = resolveEmbeddingProviderConfig(options)
+  const visual = resolveVisualProviderConfig()
+  validateGlobalPathsAndModel(dbPath, cacheDir, embedding.modelName, embedding.embeddingProvider)
+
+  const config: ResolvedGlobalConfig = {
+    dbPath,
+    cacheDir,
+    ...embedding,
+    ...visual,
   }
-  if (grouping.value !== undefined) {
-    config.grouping = grouping.value
-  }
-  if (maxFiles.value !== undefined) {
-    config.maxFiles = maxFiles.value
-  }
-  if (hybridWeight.value !== undefined) {
-    config.hybridWeight = hybridWeight.value
-  }
+  applySearchSettings(config)
   return config
 }
 
