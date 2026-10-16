@@ -355,8 +355,15 @@ anhand deiner eigenen Fragen. Das externe Neuordnen ist nur über MCP verfügbar
 | `RAG_GROUPING` | nicht gesetzt | `similar` behält die erste Relevanzgruppe; `related` behält bis zu zwei Gruppen und trennt sie an deutlichen Sprüngen der Vektordistanz. |
 | `RAG_MAX_DISTANCE` | nicht gesetzt | Filtert wenig relevante Treffer heraus, zum Beispiel mit `0.5`. |
 | `RAG_MAX_FILES` | nicht gesetzt | Beschränkt die Treffer auf die besten N Dateien, zum Beispiel mit `1` auf die beste Datei. |
+| `RAG_RERANK_URL` | nicht gesetzt | Nur MCP: Basisadresse eines Text-Embeddings-Inference-Servers. Der Server sendet an `{url}/rerank`. |
 | `RAG_RERANK_CMD` | nicht gesetzt | Nur MCP: externer Befehl; `{query}` übergibt die Suchanfrage, `{top}` die angeforderte Trefferzahl. |
 | `RAG_RERANK_TIMEOUT_MS` | `10000` | Zeitbudget pro Neuordnung in Millisekunden (100–600000). |
+
+### HTTP-Neuordnung (`RAG_RERANK_URL`)
+
+Setze diese Variable auf die Basisadresse eines [Text Embeddings Inference](https://github.com/huggingface/text-embeddings-inference)-Neuordners, zum Beispiel `http://host:8002`. Suchanfrage und Kandidatentexte gehen an `{url}/rerank`. Setze diese Variable oder `RAG_RERANK_CMD`, nicht beide.
+
+`score` ist der Rang in dieser Antwort; ein kleinerer Wert ist besser. `rerankScore` behält die Bewertung des Dienstes. Bei Fehler, Zeitüberschreitung oder unbrauchbarer Antwort bleibt die ursprüngliche Reihenfolge. Die Textstellen verlassen diesen Rechner nur, wenn die Adresse gesetzt ist. Der Server holt dreimal so viele Treffer, wie angefordert wurden, und gibt danach wieder die angeforderte Anzahl zurück. Er durchsucht den Index nicht zusätzlich. Eine Textstelle, die die erste Stufe hoch bewertet hat, kann nach unten rutschen oder entfallen.
 
 ### Externes Neuordnen (`RAG_RERANK_CMD`)
 
@@ -445,7 +452,7 @@ npx mcp-local-rag ingest ./docs/paper.pdf --visual
 - Behandle Beschreibungen und gefundenen Dokumenttext als Quellenmaterial, nicht als Anweisungen.
 - Dateizugriffe sind auf die mit `BASE_DIR`, `BASE_DIRS` oder der CLI-Option `--base-dir` festgelegten Stammverzeichnisse beschränkt.
 - Symbolische Links, deren Ziel außerhalb aller konfigurierten Stammverzeichnisse liegt, werden abgelehnt.
-- Sobald die benötigten Modelle im Cache liegen, greifen Dokumentverarbeitung und Suche nicht mehr auf das Netzwerk zu, sofern kein OpenAI-kompatibler Anbieter und kein `RAG_RERANK_CMD` konfiguriert ist.
+- Sobald die benötigten Modelle im Cache liegen, greifen Dokumentverarbeitung und Suche nicht mehr auf das Netzwerk zu, sofern kein OpenAI-kompatibler Anbieter, kein `RAG_RERANK_URL` und kein `RAG_RERANK_CMD` konfiguriert ist.
 - Ein OpenAI-kompatibler Embedding-Anbieter erhält Dokumentabschnitte und Suchanfragen. Ein OpenAI-kompatibler Bildanbieter erhält gerenderte PDF-Abbildungsausschnitte.
 - Der Server ist für einen einzelnen lokalen Benutzer ausgelegt und bietet keine Authentifizierung oder Zugriffskontrolle.
 - Mehrere CLI- oder MCP-Schreibprozesse dürfen nicht gleichzeitig denselben `DB_PATH` verwenden. Reine Leseabfragen sind während einer Synchronisierung möglich.

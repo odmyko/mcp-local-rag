@@ -19,7 +19,7 @@ function fixtureCommand(source: string, configuredArgs = '--query {query} --top 
   fixtureCount += 1
   const scriptPath = join(workDir, `fixture-${fixtureCount}.mjs`)
   writeFileSync(scriptPath, source)
-  return `${process.execPath} ${scriptPath}${configuredArgs ? ` ${configuredArgs}` : ''}`
+  return `"${process.execPath}" "${scriptPath}"${configuredArgs ? ` ${configuredArgs}` : ''}`
 }
 
 function artifactPath(name: string): string {

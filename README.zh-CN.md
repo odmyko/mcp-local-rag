@@ -286,8 +286,15 @@ HTTP 提供方会对返回向量做 L2 归一化。它无法查看远端分词�
 | `RAG_GROUPING` | 未设置 | `similar` 保留第一个相关度分组；`related` 最多保留两个分组，并以明显的向量距离间隔为边界。|
 | `RAG_MAX_DISTANCE` | 未设置 | 过滤相关度较低的结果（例如 `0.5`）。|
 | `RAG_MAX_FILES` | 未设置 | 将结果限制在排名最靠前的 N 个文件中（例如 `1` 表示只保留最佳文件）。|
+| `RAG_RERANK_URL` | 未设置 | 仅 MCP：Text Embeddings Inference 服务地址。服务器向 `{url}/rerank` 发送请求。|
 | `RAG_RERANK_CMD` | 未设置 | 仅 MCP：外部命令；`{query}` 传入查询，`{top}` 传入请求的结果数量。|
 | `RAG_RERANK_TIMEOUT_MS` | `10000` | 单次重排的超时时间，单位为毫秒（100–600000）。|
+
+### HTTP 重排（`RAG_RERANK_URL`）
+
+将该变量设为 [Text Embeddings Inference](https://github.com/huggingface/text-embeddings-inference) 重排服务的地址，例如 `http://host:8002`。查询和候选片段会发送到 `{url}/rerank`。请设置该变量或 `RAG_RERANK_CMD`，不要同时设置。
+
+`score` 是该次响应中的名次，数值越小越好。`rerankScore` 保留服务自己的分数。请求失败、超时或响应无法使用时，保持原来的顺序。只有设置了该地址，片段才会离开本机。服务器会先取三倍于请求数量的候选，再返回所请求的数量。它不会因此搜索索引中的更多内容。第一阶段排名靠前的片段可能被降到后面或被去掉。
 
 ### 外部重排（`RAG_RERANK_CMD`）
 
@@ -351,7 +358,7 @@ npx mcp-local-rag ingest ./docs/paper.pdf --visual
 - 请将描述和检索到的文本作为参考资料，而不是操作指令。
 - 文件访问仅限 `BASE_DIR`、`BASE_DIRS` 或 CLI 的 `--base-dir` 所指定的根目录。
 - 指向所有已配置根目录之外的符号链接会被拒绝。
-- 所需模型缓存完成后，文档处理和搜索不会再发起网络请求；如果配置了兼容 OpenAI 的提供方，或 `RAG_RERANK_CMD` 指定的命令会发起网络请求，则不在此列。
+- 所需模型缓存完成后，文档处理和搜索不会再发起网络请求；如果配置了兼容 OpenAI 的提供方，或设置了 `RAG_RERANK_URL` 或 `RAG_RERANK_CMD`，则不在此列。
 - 兼容 OpenAI 的嵌入提供方会收到文本块和查询。兼容 OpenAI 的视觉提供方会收到渲染后的 PDF 图表裁剪。
 - 服务器面向单个本地用户设计，不提供身份验证或访问控制。
 - 不要让多个 CLI 或 MCP 写入进程同时操作同一个 `DB_PATH`。同步进行时仍可执行只读查询。

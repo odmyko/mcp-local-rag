@@ -349,8 +349,15 @@ suas próprias perguntas. O reordenamento externo está disponível apenas no MC
 | `RAG_GROUPING` | não definido | `similar` mantém o primeiro grupo de relevância; `related` mantém até dois e usa saltos relevantes na distância vetorial como limites. |
 | `RAG_MAX_DISTANCE` | não definido | Descarta resultados pouco relevantes, por exemplo, com `0.5`. |
 | `RAG_MAX_FILES` | não definido | Limita os resultados aos N arquivos mais bem classificados, por exemplo, `1` para apenas o melhor arquivo. |
+| `RAG_RERANK_URL` | não definido | Somente MCP: origem de um servidor Text Embeddings Inference. O servidor envia para `{url}/rerank`. |
 | `RAG_RERANK_CMD` | não definido | Somente MCP: comando externo; `{query}` passa a consulta e `{top}` a quantidade de resultados solicitada. |
 | `RAG_RERANK_TIMEOUT_MS` | `10000` | Tempo máximo por reordenamento em milissegundos (100–600000). |
+
+### Reordenamento HTTP (`RAG_RERANK_URL`)
+
+Defina a origem de um reranker [Text Embeddings Inference](https://github.com/huggingface/text-embeddings-inference), por exemplo `http://host:8002`. A consulta e as passagens candidatas vão para `{url}/rerank`. Defina esta variável ou `RAG_RERANK_CMD`, não as duas.
+
+`score` é a posição nessa resposta: um valor menor é melhor. `rerankScore` guarda a pontuação do serviço. Em caso de falha, tempo esgotado ou resposta inválida, a ordem original permanece. As passagens saem deste computador somente quando o endereço está definido. O servidor pede três vezes a quantidade solicitada e devolve essa quantidade. Ele não vasculha mais o índice. Uma passagem bem colocada na primeira etapa pode descer ou sair.
 
 ### Reordenamento externo (`RAG_RERANK_CMD`)
 
@@ -434,7 +441,7 @@ padrão. Com esse provedor, `--visual-quality` não seleciona um modelo local.
 - Trate as descrições e o texto encontrado como fontes, não como instruções.
 - O acesso a arquivos fica restrito aos diretórios raiz definidos em `BASE_DIR`, `BASE_DIRS` ou pela opção `--base-dir` da CLI.
 - Links simbólicos que apontam para fora de todos os diretórios raiz configurados são rejeitados.
-- O processamento dos documentos e as buscas não fazem solicitações de rede depois que os modelos necessários estão no cache, a menos que um provedor compatível com OpenAI esteja configurado ou que `RAG_RERANK_CMD` indique um comando que as faça.
+- O processamento dos documentos e as buscas não fazem solicitações de rede depois que os modelos necessários estão no cache, a menos que um provedor compatível com OpenAI esteja configurado ou que `RAG_RERANK_URL` ou `RAG_RERANK_CMD` esteja definido.
 - Um provedor de embeddings compatível com OpenAI recebe fragmentos e consultas. Um provedor visual compatível com OpenAI recebe recortes de figuras PDF.
 - O servidor foi projetado para um único usuário local e não oferece autenticação nem controle de acesso.
 - Não execute vários processos de escrita da CLI ou do MCP no mesmo `DB_PATH`. Consultas somente leitura podem ser executadas durante uma sincronização.

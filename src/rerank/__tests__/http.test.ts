@@ -22,7 +22,7 @@ afterEach(() => {
 
 describe('rerankWithHttp', () => {
   it('reorders by the service score and trims to top', async () => {
-    const fetchMock = vi.fn(async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => {
       return new Response(
         JSON.stringify([
           { index: 1, score: 0.2 },
@@ -45,9 +45,9 @@ describe('rerankWithHttp', () => {
     expect(ranked.map((item) => item.chunkIndex)).toEqual([0, 1])
     expect(ranked.map((item) => item.score)).toEqual([0, 1 / 3])
     expect(ranked[0]).toMatchObject({ rerankScore: 0.9, text: 'body of a' })
-    const request = fetchMock.mock.calls[0]
-    expect(String(request?.[0])).toBe('http://rerank.test/rerank')
-    expect(JSON.parse(String(request?.[1]?.body))).toEqual({
+    const [url, init] = fetchMock.mock.calls[0] ?? []
+    expect(String(url)).toBe('http://rerank.test/rerank')
+    expect(JSON.parse(String(init?.body))).toEqual({
       query: 'UEC ECN',
       texts: ['body of a', 'body of b', 'body of c'],
       truncate: true,

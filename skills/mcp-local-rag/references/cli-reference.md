@@ -33,6 +33,14 @@ Set `RAG_VISUAL_PROVIDER=openai` together with `--visual` to send PDF figure cro
 | `RAG_VISUAL_API_KEY` | unset | Optional bearer token |
 | `RAG_VISUAL_TIMEOUT_MS` | `120000` | Caption request timeout |
 
+## Reranking
+
+MCP only. The CLI does not rerank.
+
+`RAG_RERANK_URL` is the origin of a Text Embeddings Inference reranker. The server POSTs the query and the retrieved passages to `{url}/rerank`, then returns the requested count. `RAG_RERANK_CMD` is the external-command alternative. Set one of them, not both. `RAG_RERANK_TIMEOUT_MS` defaults to `10000`. A failure keeps the original order.
+
+The returned `score` is the rank in that response, so a lower value is better. This does not search more of the index. A passage from the first stage can move down or drop out.
+
 ## Commands
 
 ### ingest

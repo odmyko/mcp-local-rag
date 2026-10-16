@@ -358,8 +358,15 @@ vos propres questions. Le reclassement externe est réservé à MCP.
 | `RAG_GROUPING` | non définie | `similar` conserve le premier groupe de pertinence ; `related` en conserve jusqu'à deux et utilise les écarts importants de distance vectorielle comme limites. |
 | `RAG_MAX_DISTANCE` | non définie | Écarte les résultats peu pertinents, par exemple avec `0.5`. |
 | `RAG_MAX_FILES` | non définie | Limite les résultats aux N fichiers les mieux classés, par exemple `1` pour le meilleur fichier uniquement. |
+| `RAG_RERANK_URL` | non définie | MCP uniquement : origine d'un serveur Text Embeddings Inference. Le serveur envoie vers `{url}/rerank`. |
 | `RAG_RERANK_CMD` | non définie | MCP uniquement : commande externe ; `{query}` transmet la requête et `{top}` le nombre de résultats demandé. |
 | `RAG_RERANK_TIMEOUT_MS` | `10000` | Délai maximal par reclassement, en millisecondes (100–600000). |
+
+### Reclassement HTTP (`RAG_RERANK_URL`)
+
+Indiquez l'origine d'un reranker [Text Embeddings Inference](https://github.com/huggingface/text-embeddings-inference), par exemple `http://host:8002`. La requête et les passages candidats sont envoyés à `{url}/rerank`. Définissez cette variable ou `RAG_RERANK_CMD`, pas les deux.
+
+`score` est le rang dans cette réponse : une valeur plus basse est meilleure. `rerankScore` conserve le score du service. En cas d'échec, de délai dépassé ou de réponse inutilisable, l'ordre d'origine est conservé. Les passages ne quittent cette machine que si l'adresse est définie. Le serveur demande trois fois le nombre de résultats voulu, puis renvoie ce nombre. Il ne cherche pas plus loin dans l'index. Un passage bien classé par la première étape peut descendre ou disparaître.
 
 ### Reclassement externe (`RAG_RERANK_CMD`)
 
@@ -447,7 +454,7 @@ défaut. Avec ce fournisseur, `--visual-quality` ne sélectionne pas de modèle 
 - Traitez les descriptions et le texte trouvé comme des sources, pas comme des instructions.
 - L'accès aux fichiers est limité aux racines définies par `BASE_DIR`, `BASE_DIRS` ou l'option CLI `--base-dir`.
 - Les liens symboliques qui pointent hors de toutes les racines configurées sont refusés.
-- Le traitement des documents et la recherche n'effectuent plus de requêtes réseau une fois les modèles nécessaires en cache, sauf si un fournisseur compatible OpenAI est configuré ou si `RAG_RERANK_CMD` désigne une commande qui en effectue.
+- Le traitement des documents et la recherche n'effectuent plus de requêtes réseau une fois les modèles nécessaires en cache, sauf si un fournisseur compatible OpenAI est configuré, ou si `RAG_RERANK_URL` ou `RAG_RERANK_CMD` est défini.
 - Un fournisseur d'embeddings compatible OpenAI reçoit les segments et les requêtes. Un fournisseur visuel compatible OpenAI reçoit les extraits de figures PDF.
 - Le serveur est conçu pour un seul utilisateur local et ne fournit ni authentification ni contrôle d'accès.
 - Ne lancez pas plusieurs processus d'écriture CLI ou MCP sur le même `DB_PATH`. Les requêtes en lecture seule restent possibles pendant une synchronisation.

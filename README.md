@@ -350,6 +350,8 @@ Set this to the origin of a [Text Embeddings Inference](https://github.com/huggi
 
 The returned `score` is the rank within that response, so a lower value is better. `rerankScore` keeps the service's own score. A failure, timeout, or unusable response keeps the original order. Passages leave this machine only when the URL is set.
 
+This setting does not claim better retrieval. The server fetches three times the requested result count, sends that shortlist to the reranker, and returns the requested count. It does not search more of the index. A passage the first stage ranked highly can move down or drop out when the remote model scores it lower. Search stays on the original order when `RAG_RERANK_URL` is unset.
+
 ### External Reranking (`RAG_RERANK_CMD`)
 
 The command reads search results, including matched text, from stdin. If it calls a remote
@@ -433,7 +435,7 @@ npx mcp-local-rag ingest ./docs/paper.pdf --visual
 - File access is restricted to `BASE_DIR`, `BASE_DIRS`, or CLI `--base-dir` roots.
 - Symlinks that resolve outside every configured root are rejected.
 - Document processing and search make no network requests after the required models are cached,
-  unless an OpenAI-compatible provider or `RAG_RERANK_CMD` is configured.
+  unless an OpenAI-compatible provider, `RAG_RERANK_URL`, or `RAG_RERANK_CMD` is configured.
 - An OpenAI-compatible embedding provider receives document chunks and queries. An
   OpenAI-compatible visual provider receives rendered PDF figure crops.
 - The server is designed for one local user and does not provide authentication or access control.

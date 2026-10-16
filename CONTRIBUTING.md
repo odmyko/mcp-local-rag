@@ -120,6 +120,7 @@ src/
   parser/         # Document parsing (PDF, DOCX, TXT, Markdown, HTML)
   chunker/        # Semantic text chunking
   embedder/       # Transformers.js embeddings, or an optional OpenAI-compatible HTTP endpoint
+  rerank/         # Optional command reranker, or a Text Embeddings Inference /rerank client
   vectordb/       # LanceDB operations
   __tests__/      # Test suites
 ```
