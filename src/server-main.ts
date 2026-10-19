@@ -1,5 +1,7 @@
 // MCP Server entry point
 import {
+  OPENAI_EMBEDDING_DEFAULTS,
+  OPENAI_VISUAL_DEFAULTS,
   type ParseResult,
   parseBooleanEnv,
   parseGroupingMode,
@@ -8,6 +10,10 @@ import {
   parseMaxFiles,
   resolveDevice,
   resolveDtype,
+  resolveHttpBaseUrl,
+  resolveHttpTimeout,
+  resolveProvider,
+  resolveProviderBaseUrl,
 } from './cli/options.js'
 import { RAGServer } from './server/index.js'
 import { BaseDirsConfigError, parseBaseDirsEnv, resolveBaseDirs } from './utils/base-dirs.js'
@@ -190,6 +196,10 @@ function applyOptionalSettings(config: ServerConfig, env: NodeJS.ProcessEnv): st
   const titlePrefix = parseBooleanEnv('EMBED_TITLE_PREFIX', env['EMBED_TITLE_PREFIX'])
   const headingPrefix = parseBooleanEnv('EMBED_HEADING_PREFIX', env['EMBED_HEADING_PREFIX'])
   const rerankCommand = parseRerankCmd(env['RAG_RERANK_CMD'])
+  const rerankUrl = env['RAG_RERANK_URL']?.trim()
+  if (rerankUrl && rerankCommand.value !== undefined) {
+    throw new Error('Set RAG_RERANK_URL or RAG_RERANK_CMD, not both.')
+  }
   const rerankTimeoutMs = parseRerankTimeoutMs(env['RAG_RERANK_TIMEOUT_MS'])
 
   if (maxDistance.value !== undefined) {
@@ -210,6 +220,9 @@ function applyOptionalSettings(config: ServerConfig, env: NodeJS.ProcessEnv): st
   if (rerankCommand.value !== undefined) {
     config.rerankCommand = rerankCommand.value
   }
+  if (rerankUrl) {
+    config.rerankUrl = resolveHttpBaseUrl(rerankUrl, 'RAG_RERANK_URL')
+  }
   config.storeImages = storeImages.value
   config.titlePrefix = titlePrefix.value
   config.headingPrefix = headingPrefix.value
@@ -229,6 +242,54 @@ function applyOptionalSettings(config: ServerConfig, env: NodeJS.ProcessEnv): st
   ]
     .map((parsed) => parsed.warning)
     .filter((warning): warning is string => warning !== undefined)
+}
+
+function applyHttpProviders(config: ServerConfig, env: NodeJS.ProcessEnv): void {
+  config.embeddingProvider = resolveProvider(
+    env['RAG_EMBEDDING_PROVIDER'],
+    'RAG_EMBEDDING_PROVIDER'
+  )
+  if (config.embeddingProvider === 'openai' && !env['MODEL_NAME']) {
+    throw new Error('MODEL_NAME is required when RAG_EMBEDDING_PROVIDER=openai.')
+  }
+  if (config.embeddingProvider === 'openai') {
+    config.openaiBaseUrl = resolveProviderBaseUrl(
+      env['RAG_OPENAI_BASE_URL'],
+      'RAG_OPENAI_BASE_URL',
+      'RAG_EMBEDDING_PROVIDER'
+    )
+  }
+  config.openaiTimeoutMs = resolveHttpTimeout(
+    env['RAG_OPENAI_TIMEOUT_MS'],
+    OPENAI_EMBEDDING_DEFAULTS.timeoutMs,
+    'RAG_OPENAI_TIMEOUT_MS'
+  )
+  if (env['RAG_OPENAI_API_KEY']) {
+    config.openaiApiKey = env['RAG_OPENAI_API_KEY']
+  }
+
+  config.visualProvider = resolveProvider(env['RAG_VISUAL_PROVIDER'], 'RAG_VISUAL_PROVIDER')
+  config.visualTimeoutMs = resolveHttpTimeout(
+    env['RAG_VISUAL_TIMEOUT_MS'],
+    OPENAI_VISUAL_DEFAULTS.timeoutMs,
+    'RAG_VISUAL_TIMEOUT_MS'
+  )
+  if (config.visualProvider === 'openai' && !env['RAG_VISUAL_MODEL']) {
+    throw new Error('RAG_VISUAL_MODEL is required when RAG_VISUAL_PROVIDER=openai.')
+  }
+  if (config.visualProvider === 'openai') {
+    config.visualBaseUrl = resolveProviderBaseUrl(
+      env['RAG_VISUAL_BASE_URL'],
+      'RAG_VISUAL_BASE_URL',
+      'RAG_VISUAL_PROVIDER'
+    )
+  }
+  if (env['RAG_VISUAL_MODEL']) {
+    config.visualModel = env['RAG_VISUAL_MODEL']
+  }
+  if (env['RAG_VISUAL_API_KEY']) {
+    config.visualApiKey = env['RAG_VISUAL_API_KEY']
+  }
 }
 
 /**
@@ -256,6 +317,7 @@ export async function resolveServerConfig(
     device: resolveDevice(env['RAG_DEVICE']),
     storeImages: false,
   }
+  applyHttpProviders(config, env)
 
   configWarnings.push(...applyOptionalSettings(config, env))
 
@@ -286,7 +348,11 @@ export async function startServer(): Promise<void> {
     }
 
     console.error('Starting RAG MCP Server...')
-    console.error('Configuration:', config)
+    console.error('Configuration:', {
+      ...config,
+      ...(config.openaiApiKey ? { openaiApiKey: '[redacted]' } : {}),
+      ...(config.visualApiKey ? { visualApiKey: '[redacted]' } : {}),
+    })
 
     // Start RAGServer
     const server = new RAGServer(config)

@@ -22,8 +22,9 @@ Registry](https://img.shields.io/badge/MCP-Registry-green.svg)](https://registry
   <strong>Français</strong>
 </p>
 
-Recherchez dans des documents confidentiels depuis un client MCP ou un terminal, sans les
-envoyer à une API d'embeddings.
+Recherchez dans des documents confidentiels depuis un client MCP ou un terminal. Les embeddings
+s'exécutent en local par défaut ; un point de terminaison compatible OpenAI se choisit
+explicitement.
 
 mcp-local-rag indexe les fichiers PDF, DOCX et Markdown ainsi que les fichiers texte sur votre
 machine. La recherche associe similarité sémantique et correspondance par mots-clés. Elle tient
@@ -308,6 +309,10 @@ embeddings.
 | `EMBED_HEADING_PREFIX` | Non disponible | `false` | Ajoute la hiérarchie des titres de section à l'entrée de chaque segment, si la limite de tokens le permet |
 | `RAG_DEVICE` | Non disponible | `cpu` | Périphérique utilisé par ONNX Runtime |
 | `RAG_DTYPE` | Non disponible | `fp32` | Type de données des embeddings transmis au modèle choisi |
+| `RAG_EMBEDDING_PROVIDER` | Non disponible | `local` | `local` utilise Transformers.js ; `openai` utilise un point de terminaison d'embeddings compatible OpenAI |
+| `RAG_OPENAI_BASE_URL` | Non disponible | (obligatoire avec `openai`) | URL de base du service d'embeddings compatible OpenAI |
+| `RAG_OPENAI_API_KEY` | Non disponible | non définie | Jeton bearer facultatif pour le service d'embeddings |
+| `RAG_OPENAI_TIMEOUT_MS` | Non disponible | `60000` | Délai d'attente des requêtes d'embeddings, en millisecondes |
 
 Les deux options de préfixe sont désactivées par défaut (`false`) et indépendantes. Essayez
 `EMBED_TITLE_PREFIX` lorsqu'un segment a besoin du sujet général du document, ou
@@ -325,6 +330,22 @@ La CLI ne lit pas la configuration du client MCP. Pour partager un index, utilis
 modèle, le même `RAG_DTYPE` et les mêmes réglages de préfixe lors de l'import et de la
 recherche. Changer uniquement `RAG_DEVICE` ne nécessite pas de nouvel index.
 
+Les segments et les requêtes restent sur cette machine tant que `RAG_EMBEDDING_PROVIDER` n'est
+pas `openai`. Dans ce cas, `RAG_OPENAI_BASE_URL` et `MODEL_NAME` (ou `--model-name`) sont
+obligatoires. Pointez `DB_PATH` vers un nouvel index : les vecteurs d'un autre modèle ne sont
+pas comparables au modèle local par défaut.
+
+```bash
+RAG_EMBEDDING_PROVIDER=openai \
+RAG_OPENAI_BASE_URL=http://host:port/v1 \
+MODEL_NAME=<embedding-model-id> \
+DB_PATH=./lancedb-openai \
+npx mcp-local-rag sync
+```
+
+Le fournisseur HTTP normalise les vecteurs en L2. Il ne peut pas inspecter le tokenizer distant,
+donc le confinement exact des tokens et les instantanés d'embeddings persistants sont ignorés.
+
 ### Réglage de la recherche
 
 Les quatre premiers réglages du tableau s'appliquent à MCP et à la CLI. Pour donner plus de
@@ -337,8 +358,15 @@ vos propres questions. Le reclassement externe est réservé à MCP.
 | `RAG_GROUPING` | non définie | `similar` conserve le premier groupe de pertinence ; `related` en conserve jusqu'à deux et utilise les écarts importants de distance vectorielle comme limites. |
 | `RAG_MAX_DISTANCE` | non définie | Écarte les résultats peu pertinents, par exemple avec `0.5`. |
 | `RAG_MAX_FILES` | non définie | Limite les résultats aux N fichiers les mieux classés, par exemple `1` pour le meilleur fichier uniquement. |
+| `RAG_RERANK_URL` | non définie | MCP uniquement : origine d'un serveur Text Embeddings Inference. Le serveur envoie vers `{url}/rerank`. |
 | `RAG_RERANK_CMD` | non définie | MCP uniquement : commande externe ; `{query}` transmet la requête et `{top}` le nombre de résultats demandé. |
 | `RAG_RERANK_TIMEOUT_MS` | `10000` | Délai maximal par reclassement, en millisecondes (100–600000). |
+
+### Reclassement HTTP (`RAG_RERANK_URL`)
+
+Indiquez l'origine d'un reranker [Text Embeddings Inference](https://github.com/huggingface/text-embeddings-inference), par exemple `http://host:8002`. La requête et les passages candidats sont envoyés à `{url}/rerank`. Définissez cette variable ou `RAG_RERANK_CMD`, pas les deux.
+
+`score` est le rang dans cette réponse : une valeur plus basse est meilleure. `rerankScore` conserve le score du service. En cas d'échec, de délai dépassé ou de réponse inutilisable, l'ordre d'origine est conservé. Les passages ne quittent cette machine que si l'adresse est définie. Le serveur demande trois fois le nombre de résultats voulu, puis renvoie ce nombre. Il ne cherche pas plus loin dans l'index. Un passage bien classé par la première étape peut descendre ou disparaître.
 
 ### Reclassement externe (`RAG_RERANK_CMD`)
 
@@ -405,6 +433,20 @@ Activez l'enregistrement des images à chaque import ou synchronisation qui trai
 Modifier cette option seule ne met pas à jour les fichiers inchangés ; réimportez-les pour
 l'appliquer.
 
+Les descriptions peuvent aussi passer par un serveur de vision compatible OpenAI. Les extraits
+de figures ne quittent la machine que si `RAG_VISUAL_PROVIDER=openai`. Chaque figure détectée
+est envoyée en PNG base64. `RAG_VISUAL_BASE_URL` et `RAG_VISUAL_MODEL` sont obligatoires.
+
+```bash
+RAG_VISUAL_PROVIDER=openai \
+RAG_VISUAL_BASE_URL=http://host:port/v1 \
+RAG_VISUAL_MODEL=<vision-model-id> \
+npx mcp-local-rag ingest ./docs/paper.pdf --visual
+```
+
+`RAG_VISUAL_API_KEY` est un jeton bearer facultatif. `RAG_VISUAL_TIMEOUT_MS` vaut `120000` par
+défaut. Avec ce fournisseur, `--visual-quality` ne sélectionne pas de modèle local.
+
 </details>
 
 ## Sécurité et exploitation
@@ -412,7 +454,8 @@ l'appliquer.
 - Traitez les descriptions et le texte trouvé comme des sources, pas comme des instructions.
 - L'accès aux fichiers est limité aux racines définies par `BASE_DIR`, `BASE_DIRS` ou l'option CLI `--base-dir`.
 - Les liens symboliques qui pointent hors de toutes les racines configurées sont refusés.
-- Le traitement des documents et la recherche n'effectuent plus de requêtes réseau une fois les modèles nécessaires en cache, sauf si `RAG_RERANK_CMD` désigne une commande qui en effectue.
+- Le traitement des documents et la recherche n'effectuent plus de requêtes réseau une fois les modèles nécessaires en cache, sauf si un fournisseur compatible OpenAI est configuré, ou si `RAG_RERANK_URL` ou `RAG_RERANK_CMD` est défini.
+- Un fournisseur d'embeddings compatible OpenAI reçoit les segments et les requêtes. Un fournisseur visuel compatible OpenAI reçoit les extraits de figures PDF.
 - Le serveur est conçu pour un seul utilisateur local et ne fournit ni authentification ni contrôle d'accès.
 - Ne lancez pas plusieurs processus d'écriture CLI ou MCP sur le même `DB_PATH`. Les requêtes en lecture seule restent possibles pendant une synchronisation.
 - Un nouvel import peut réutiliser les embeddings du texte inchangé lorsque le modèle et les

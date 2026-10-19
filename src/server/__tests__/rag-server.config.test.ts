@@ -170,6 +170,25 @@ describe('RAG_RERANK_CMD configuration', () => {
     )
     expect(enabled.rerankCommand).toBe('/usr/local/bin/reranker')
   })
+
+  it('accepts a Text Embeddings Inference origin and rejects setting both rerankers', async () => {
+    const enabled = await resolveServerConfig(
+      { BASE_DIR: cwd, RAG_RERANK_URL: 'http://rerank.test:8002/' },
+      cwd
+    )
+    expect(enabled.rerankUrl).toBe('http://rerank.test:8002')
+
+    await expect(
+      resolveServerConfig(
+        {
+          BASE_DIR: cwd,
+          RAG_RERANK_URL: 'http://rerank.test:8002',
+          RAG_RERANK_CMD: '/usr/local/bin/reranker',
+        },
+        cwd
+      )
+    ).rejects.toThrow('RAG_RERANK_URL or RAG_RERANK_CMD')
+  })
 })
 
 describe('RAG_RERANK_TIMEOUT_MS configuration', () => {

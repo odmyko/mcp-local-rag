@@ -18,6 +18,13 @@ import {
 // that is what makes a future subcommand's missing help line fail this suite.
 import { SUBCOMMANDS } from '../../cli-main.js'
 
+const PROVIDER_DEFAULTS = {
+  embeddingProvider: 'local',
+  openaiTimeoutMs: 60_000,
+  visualProvider: 'local',
+  visualTimeoutMs: 120_000,
+} as const
+
 describe('ingest --images option', () => {
   let exitSpy: ReturnType<typeof vi.spyOn>
 
@@ -252,6 +259,15 @@ describe('CLI global options', () => {
       delete process.env['RAG_GROUPING']
       delete process.env['RAG_MAX_FILES']
       delete process.env['RAG_HYBRID_WEIGHT']
+      delete process.env['RAG_EMBEDDING_PROVIDER']
+      delete process.env['RAG_OPENAI_BASE_URL']
+      delete process.env['RAG_OPENAI_API_KEY']
+      delete process.env['RAG_OPENAI_TIMEOUT_MS']
+      delete process.env['RAG_VISUAL_PROVIDER']
+      delete process.env['RAG_VISUAL_BASE_URL']
+      delete process.env['RAG_VISUAL_MODEL']
+      delete process.env['RAG_VISUAL_API_KEY']
+      delete process.env['RAG_VISUAL_TIMEOUT_MS']
     })
 
     it('reads the same search-tuning variables the MCP server reads', () => {
@@ -261,6 +277,7 @@ describe('CLI global options', () => {
       process.env['RAG_HYBRID_WEIGHT'] = '0'
 
       expect(resolveGlobalConfig({})).toEqual({
+        ...PROVIDER_DEFAULTS,
         dbPath: './lancedb/',
         cacheDir: './models/',
         modelName: 'Xenova/all-MiniLM-L6-v2',
@@ -290,6 +307,7 @@ describe('CLI global options', () => {
       const config = resolveGlobalConfig({})
       // Independent literals (not GLOBAL_DEFAULTS) so default changes are caught here.
       expect(config).toEqual({
+        ...PROVIDER_DEFAULTS,
         dbPath: './lancedb/',
         cacheDir: './models/',
         modelName: 'Xenova/all-MiniLM-L6-v2',
@@ -303,6 +321,7 @@ describe('CLI global options', () => {
         modelName: 'cli/model',
       })
       expect(config).toEqual({
+        ...PROVIDER_DEFAULTS,
         dbPath: '/cli/db',
         cacheDir: '/cli/cache',
         modelName: 'cli/model',
@@ -316,6 +335,7 @@ describe('CLI global options', () => {
 
       const config = resolveGlobalConfig({})
       expect(config).toEqual({
+        ...PROVIDER_DEFAULTS,
         dbPath: '/env/db',
         cacheDir: '/env/cache',
         modelName: 'env/model',
@@ -333,6 +353,7 @@ describe('CLI global options', () => {
         modelName: 'cli/model',
       })
       expect(config).toEqual({
+        ...PROVIDER_DEFAULTS,
         dbPath: '/cli/db',
         cacheDir: '/cli/cache',
         modelName: 'cli/model',
@@ -346,6 +367,55 @@ describe('CLI global options', () => {
       expect(config.dbPath).toBe('/cli/db')
       expect(config.cacheDir).toBe('/env/cache')
       expect(config.modelName).toBe('Xenova/all-MiniLM-L6-v2')
+    })
+
+    it('resolves OpenAI-compatible embedding and visual providers', () => {
+      process.env['RAG_EMBEDDING_PROVIDER'] = 'openai'
+      process.env['MODEL_NAME'] = 'embedding-model'
+      process.env['RAG_OPENAI_BASE_URL'] = 'http://embedding.test:1234/v1/'
+      process.env['RAG_OPENAI_TIMEOUT_MS'] = '2000'
+      process.env['RAG_VISUAL_PROVIDER'] = 'openai'
+      process.env['RAG_VISUAL_MODEL'] = 'vision-model'
+      process.env['RAG_VISUAL_BASE_URL'] = 'http://vision.test:8000/v1/'
+
+      expect(resolveGlobalConfig({})).toMatchObject({
+        embeddingProvider: 'openai',
+        modelName: 'embedding-model',
+        openaiBaseUrl: 'http://embedding.test:1234/v1',
+        openaiTimeoutMs: 2000,
+        visualProvider: 'openai',
+        visualModel: 'vision-model',
+        visualBaseUrl: 'http://vision.test:8000/v1',
+      })
+    })
+
+    it('requires model ids for OpenAI-compatible providers', () => {
+      process.env['RAG_EMBEDDING_PROVIDER'] = 'openai'
+      expect(() => resolveGlobalConfig({})).toThrow('MODEL_NAME')
+
+      process.env['RAG_EMBEDDING_PROVIDER'] = 'local'
+      process.env['RAG_VISUAL_PROVIDER'] = 'openai'
+      expect(() => resolveGlobalConfig({})).toThrow('RAG_VISUAL_MODEL')
+    })
+
+    it('requires base URLs for OpenAI-compatible providers', () => {
+      process.env['RAG_EMBEDDING_PROVIDER'] = 'openai'
+      process.env['MODEL_NAME'] = 'embedding-model'
+      expect(() => resolveGlobalConfig({})).toThrow('RAG_OPENAI_BASE_URL')
+
+      process.env['RAG_EMBEDDING_PROVIDER'] = 'local'
+      process.env['RAG_VISUAL_PROVIDER'] = 'openai'
+      process.env['RAG_VISUAL_MODEL'] = 'vision-model'
+      expect(() => resolveGlobalConfig({})).toThrow('RAG_VISUAL_BASE_URL')
+    })
+
+    it('ignores provider URLs while the local provider is selected', () => {
+      process.env['RAG_OPENAI_BASE_URL'] = 'http://embedding.test:1234/v1'
+      process.env['RAG_VISUAL_BASE_URL'] = 'http://vision.test:8000/v1'
+
+      const config = resolveGlobalConfig({})
+      expect(config).not.toHaveProperty('openaiBaseUrl')
+      expect(config).not.toHaveProperty('visualBaseUrl')
     })
   })
 

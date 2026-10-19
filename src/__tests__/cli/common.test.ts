@@ -45,6 +45,10 @@ function makeConfig(overrides: Partial<ResolvedGlobalConfig> = {}): ResolvedGlob
     dbPath: './test-db/',
     cacheDir: './test-cache/',
     modelName: 'Xenova/all-MiniLM-L6-v2',
+    embeddingProvider: 'local',
+    openaiTimeoutMs: 60_000,
+    visualProvider: 'local',
+    visualTimeoutMs: 120_000,
     ...overrides,
   }
 }

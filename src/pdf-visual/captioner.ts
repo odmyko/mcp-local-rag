@@ -10,6 +10,7 @@
 import { env } from '@huggingface/transformers'
 
 import { createFastCaptioner } from './captioners/fast.js'
+import { createOpenAICaptioner } from './captioners/openai.js'
 import { createQualityCaptioner } from './captioners/quality.js'
 import type { Captioner, CaptionerConfig } from './types.js'
 
@@ -22,6 +23,10 @@ import type { Captioner, CaptionerConfig } from './types.js'
  * win. Safe for the current one-captioner-per-run usage.
  */
 export function createCaptioner(config: CaptionerConfig): Captioner {
+  if (config.provider === 'openai') {
+    return createOpenAICaptioner(config)
+  }
+
   // Defensive ordering: set the global cacheDir at construction so the very
   // first `from_pretrained` call sees the right value. Setting the same
   // global twice with the same value is idempotent (shared with the

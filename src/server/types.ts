@@ -1,5 +1,6 @@
 // Type definitions for RAGServer
 
+import type { EmbeddingProviderKind } from '../embedder/provider.js'
 import type { BaseDirsConfigError } from '../utils/base-dirs.js'
 import type { ContentFormat } from '../utils/raw-data-utils.js'
 import type { SourceContext } from '../utils/source-context.js'
@@ -16,6 +17,14 @@ interface RAGServerConfigBase {
   dbPath: string
   /** Transformers.js model path */
   modelName: string
+  /** Embedding implementation (default: local). */
+  embeddingProvider?: EmbeddingProviderKind
+  /** OpenAI-compatible embedding endpoint. */
+  openaiBaseUrl?: string
+  /** Optional bearer token for the embedding endpoint. */
+  openaiApiKey?: string
+  /** Embedding HTTP timeout in milliseconds. */
+  openaiTimeoutMs?: number
   /** Model cache directory */
   cacheDir: string
   /** Maximum file size (100MB) */
@@ -40,8 +49,20 @@ interface RAGServerConfigBase {
   headingPrefix?: boolean
   /** Store bounded PDF regions and Mammoth-produced DOCX images. */
   storeImages?: boolean
-  /** External reranker command, as configured. Unset disables reranking. */
+  /** PDF caption implementation (default: local). */
+  visualProvider?: EmbeddingProviderKind
+  /** OpenAI-compatible visual chat endpoint. */
+  visualBaseUrl?: string
+  /** Required model id for the OpenAI-compatible visual provider. */
+  visualModel?: string
+  /** Optional bearer token for the visual endpoint. */
+  visualApiKey?: string
+  /** Visual HTTP timeout in milliseconds. */
+  visualTimeoutMs?: number
+  /** External reranker command, as configured. Unset disables command reranking. */
   rerankCommand?: string
+  /** Text Embeddings Inference origin. Unset disables HTTP reranking. */
+  rerankUrl?: string
   /** Per-rerank-call budget in milliseconds (default: 10000). */
   rerankTimeoutMs?: number
   /**

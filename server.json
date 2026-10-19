@@ -56,7 +56,7 @@
         },
         {
           "name": "MODEL_NAME",
-          "description": "Embedding model name (defaults to Xenova/all-MiniLM-L6-v2)",
+          "description": "Embedding model name. Defaults to Xenova/all-MiniLM-L6-v2 for the local provider. Required when RAG_EMBEDDING_PROVIDER=openai, and then it is the remote model id.",
           "isRequired": false,
           "format": "string",
           "isSecret": false
@@ -139,15 +139,85 @@
           "isSecret": false
         },
         {
+          "name": "RAG_EMBEDDING_PROVIDER",
+          "description": "Embedding provider: local (default, Transformers.js) or openai. openai sends chunks and queries to RAG_OPENAI_BASE_URL.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "RAG_OPENAI_BASE_URL",
+          "description": "OpenAI-compatible embeddings base URL. Required when RAG_EMBEDDING_PROVIDER=openai. No project default.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "RAG_OPENAI_API_KEY",
+          "description": "Optional bearer token for the OpenAI-compatible embeddings endpoint.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "RAG_OPENAI_TIMEOUT_MS",
+          "description": "Embedding HTTP timeout in milliseconds (100-600000, defaults to 60000).",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "RAG_VISUAL_PROVIDER",
+          "description": "PDF caption provider: local (default) or openai. openai sends figure crops to RAG_VISUAL_BASE_URL.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "RAG_VISUAL_BASE_URL",
+          "description": "OpenAI-compatible vision chat base URL. Required when RAG_VISUAL_PROVIDER=openai. No project default.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "RAG_VISUAL_MODEL",
+          "description": "Model id for the OpenAI-compatible vision endpoint. Required when RAG_VISUAL_PROVIDER=openai.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "RAG_VISUAL_API_KEY",
+          "description": "Optional bearer token for the OpenAI-compatible vision endpoint.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "RAG_VISUAL_TIMEOUT_MS",
+          "description": "Caption HTTP timeout in milliseconds (100-600000, defaults to 120000).",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "RAG_RERANK_URL",
+          "description": "Text Embeddings Inference origin for MCP reranking. The server POSTs to {url}/rerank. Do not set this together with RAG_RERANK_CMD. Unset leaves the original search order.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
           "name": "RAG_RERANK_CMD",
-          "description": "External reranker command template. Use {query} and {top} for query text and result count; unset disables reranking.",
+          "description": "External reranker command template. Use {query} and {top} for query text and result count. Do not set this together with RAG_RERANK_URL. Unset disables command reranking.",
           "isRequired": false,
           "format": "string",
           "isSecret": false
         },
         {
           "name": "RAG_RERANK_TIMEOUT_MS",
-          "description": "Time budget per rerank call in milliseconds (100-600000, defaults to 10000). On timeout the spawned command is killed and the pre-rerank ordering is returned.",
+          "description": "Time budget per rerank call in milliseconds (100-600000, defaults to 10000). On timeout the command is killed or the HTTP request is aborted, and the pre-rerank ordering is returned.",
           "isRequired": false,
           "format": "string",
           "isSecret": false

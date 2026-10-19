@@ -20,7 +20,11 @@ import {
   DocumentEmbeddingSession,
   removeEmbeddingSnapshot,
 } from '../embedder/embedding-snapshot.js'
-import { Embedder } from '../embedder/index.js'
+import {
+  createEmbeddingProvider,
+  type EmbeddingProvider,
+  type EmbeddingProviderConfig,
+} from '../embedder/provider.js'
 import { listDocuments } from '../features/list.js'
 import {
   formatSyncError,
@@ -43,6 +47,7 @@ import { parseHtml } from '../parser/html-parser.js'
 import { DocumentParser, ValidationError } from '../parser/index.js'
 import { textSourceMap } from '../parser/text-source-map.js'
 import { extractMarkdownTitle, extractTxtTitle } from '../parser/title-extractor.js'
+import { rerankWithHttp } from '../rerank/http.js'
 import { type RerankResult, rerankCandidates } from '../rerank/index.js'
 import { type BaseDirsConfigError, displayPath } from '../utils/base-dirs.js'
 import { toError } from '../utils/errors.js'
@@ -234,10 +239,60 @@ function supportsEmbeddedImages(filePath: string): boolean {
   return lower.endsWith('.pdf') || lower.endsWith('.docx')
 }
 
+function createServerVectorStore(config: RAGServerConfig): VectorStore {
+  const vectorStoreConfig: ConstructorParameters<typeof VectorStore>[0] = {
+    dbPath: config.dbPath,
+    tableName: 'chunks',
+  }
+  if (config.maxDistance !== undefined) {
+    vectorStoreConfig.maxDistance = config.maxDistance
+  }
+  if (config.grouping !== undefined) {
+    vectorStoreConfig.grouping = config.grouping
+  }
+  if (config.hybridWeight !== undefined) {
+    vectorStoreConfig.hybridWeight = config.hybridWeight
+  }
+  if (config.maxFiles !== undefined) {
+    vectorStoreConfig.maxFiles = config.maxFiles
+  }
+  return new VectorStore(vectorStoreConfig)
+}
+
+function createServerEmbedder(config: RAGServerConfig): EmbeddingProvider {
+  const embedderConfig: EmbeddingProviderConfig = {
+    provider: config.embeddingProvider ?? 'local',
+    modelPath: config.modelName,
+    batchSize: 16,
+    cacheDir: config.cacheDir,
+  }
+  if (config.device !== undefined) {
+    embedderConfig.device = config.device
+  }
+  if (config.dtype !== undefined) {
+    embedderConfig.dtype = config.dtype
+  }
+  if (config.titlePrefix) {
+    embedderConfig.titlePrefix = true
+  }
+  embedderConfig.headingPrefix = config.headingPrefix === true
+  if (embedderConfig.provider === 'openai') {
+    if (!config.openaiBaseUrl || !config.openaiTimeoutMs) {
+      throw new Error('OpenAI embedding configuration is incomplete')
+    }
+    embedderConfig.openai = {
+      baseUrl: config.openaiBaseUrl,
+      timeoutMs: config.openaiTimeoutMs,
+      ...(config.openaiApiKey ? { apiKey: config.openaiApiKey } : {}),
+    }
+  }
+  return createEmbeddingProvider(embedderConfig)
+}
+
 export class RAGServer {
   private readonly server: Server
   private readonly vectorStore: VectorStore
-  private readonly embedder: Embedder
+  private readonly embedder: EmbeddingProvider
   private readonly chunker: SemanticChunker
   private readonly parser: DocumentParser
   private readonly dbPath: string
@@ -273,8 +328,15 @@ export class RAGServer {
   private readonly maxFileSize: number
   private readonly device: string | undefined
   private readonly storeImages: boolean
-  /** Configured reranker command. Undefined leaves query_documents unchanged. */
+  private readonly visualProvider: 'local' | 'openai'
+  private readonly visualBaseUrl: string | undefined
+  private readonly visualModel: string | undefined
+  private readonly visualApiKey: string | undefined
+  private readonly visualTimeoutMs: number | undefined
+  /** Configured reranker command. Undefined leaves command reranking off. */
   private readonly rerankCommand: string | undefined
+  /** Text Embeddings Inference origin. Undefined leaves HTTP reranking off. */
+  private readonly rerankUrl: string | undefined
   private readonly rerankTimeoutMs: number
   /**
    * The one current-or-latest sync job this process retains. A new `sync_start`
@@ -308,7 +370,16 @@ export class RAGServer {
     this.maxFileSize = config.maxFileSize
     this.device = config.device
     this.storeImages = config.storeImages ?? false
+    this.visualProvider = config.visualProvider ?? 'local'
+    this.visualBaseUrl = config.visualBaseUrl
+    this.visualModel = config.visualModel
+    this.visualApiKey = config.visualApiKey
+    this.visualTimeoutMs = config.visualTimeoutMs
+    if (this.visualProvider === 'openai' && (!this.visualBaseUrl || !this.visualModel)) {
+      throw new Error('OpenAI visual caption configuration is incomplete')
+    }
     this.rerankCommand = config.rerankCommand
+    this.rerankUrl = config.rerankUrl
     this.rerankTimeoutMs = config.rerankTimeoutMs ?? DEFAULT_RERANK_TIMEOUT_MS
     this.excludePaths = [`${resolve(this.dbPath)}${sep}`, `${resolve(this.cacheDir)}${sep}`]
     this.server = new Server(
@@ -316,41 +387,8 @@ export class RAGServer {
       { capabilities: { tools: {} } }
     )
 
-    // Component initialization
-    // Only pass quality filter settings if they are defined
-    const vectorStoreConfig: ConstructorParameters<typeof VectorStore>[0] = {
-      dbPath: config.dbPath,
-      tableName: 'chunks',
-    }
-    if (config.maxDistance !== undefined) {
-      vectorStoreConfig.maxDistance = config.maxDistance
-    }
-    if (config.grouping !== undefined) {
-      vectorStoreConfig.grouping = config.grouping
-    }
-    if (config.hybridWeight !== undefined) {
-      vectorStoreConfig.hybridWeight = config.hybridWeight
-    }
-    if (config.maxFiles !== undefined) {
-      vectorStoreConfig.maxFiles = config.maxFiles
-    }
-    this.vectorStore = new VectorStore(vectorStoreConfig)
-    const embedderConfig: ConstructorParameters<typeof Embedder>[0] = {
-      modelPath: config.modelName,
-      batchSize: 16,
-      cacheDir: config.cacheDir,
-    }
-    if (config.device !== undefined) {
-      embedderConfig.device = config.device
-    }
-    if (config.dtype !== undefined) {
-      embedderConfig.dtype = config.dtype
-    }
-    if (config.titlePrefix) {
-      embedderConfig.titlePrefix = true
-    }
-    embedderConfig.headingPrefix = config.headingPrefix === true
-    this.embedder = new Embedder(embedderConfig)
+    this.vectorStore = createServerVectorStore(config)
+    this.embedder = createServerEmbedder(config)
     this.chunker = new SemanticChunker(
       config.chunkMinLength !== undefined ? { minChunkLength: config.chunkMinLength } : {}
     )
@@ -495,12 +533,25 @@ export class RAGServer {
   /**
    * query_documents tool handler
    */
-  /** Hands the finished results to the configured command and takes its answer. */
+  private rerankingEnabled(): boolean {
+    return this.rerankCommand !== undefined || this.rerankUrl !== undefined
+  }
+
+  /** Hands the finished results to the configured reranker and takes its answer. */
   private async applyReranker(
     results: RerankResult[],
     query: string,
     limit: number
   ): Promise<RerankResult[]> {
+    if (this.rerankUrl !== undefined) {
+      return rerankWithHttp({
+        candidates: results,
+        query,
+        top: limit,
+        baseUrl: this.rerankUrl,
+        timeoutMs: this.rerankTimeoutMs,
+      })
+    }
     if (this.rerankCommand === undefined) {
       return results
     }
@@ -522,10 +573,9 @@ export class RAGServer {
     // candidates than the caller asked for. `search` applies every filter and
     // caps at `limit`, so the expansion has to be requested up front.
     const limit = args.limit ?? 10
-    const candidateLimit =
-      this.rerankCommand === undefined
-        ? limit
-        : Math.min(limit * RERANK_CANDIDATE_MULTIPLIER, MAX_QUERY_LIMIT)
+    const candidateLimit = this.rerankingEnabled()
+      ? Math.min(limit * RERANK_CANDIDATE_MULTIPLIER, MAX_QUERY_LIMIT)
+      : limit
 
     // `args.scope` is parser-validated; array-wrap without re-validating, and
     // omit the key when absent (exactOptionalPropertyTypes) to keep the scope-absent path.
@@ -571,10 +621,9 @@ export class RAGServer {
     })
 
     // `search` already applied the limit, so only the expanded set is trimmed.
-    const results =
-      this.rerankCommand === undefined
-        ? retrieved
-        : (await this.applyReranker(retrieved, args.query, limit)).slice(0, limit)
+    const results = this.rerankingEnabled()
+      ? (await this.applyReranker(retrieved, args.query, limit)).slice(0, limit)
+      : retrieved
 
     const content: QueryContent = [
       {
@@ -741,11 +790,21 @@ export class RAGServer {
         images: supportsEmbeddedImages(args.filePath) && (options.images ?? this.storeImages),
         ...(args.visual === true
           ? {
-              captioner: {
-                profile: args.visualQuality ?? 'fast',
-                cacheDir: this.cacheDir,
-                device: this.device,
-              },
+              captioner:
+                this.visualProvider === 'openai'
+                  ? {
+                      provider: 'openai' as const,
+                      profile: args.visualQuality ?? 'fast',
+                      baseUrl: this.visualBaseUrl ?? '',
+                      model: this.visualModel ?? '',
+                      timeoutMs: this.visualTimeoutMs ?? 120_000,
+                      ...(this.visualApiKey ? { apiKey: this.visualApiKey } : {}),
+                    }
+                  : {
+                      profile: args.visualQuality ?? 'fast',
+                      cacheDir: this.cacheDir,
+                      device: this.device,
+                    },
             }
           : {}),
       },

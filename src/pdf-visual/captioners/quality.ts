@@ -15,6 +15,7 @@ import { AutoProcessor, Qwen3_5ForConditionalGeneration } from '@huggingface/tra
 
 import type { Captioner } from '../types.js'
 import { VlmError } from '../types.js'
+import { QUALITY_PROMPT } from './prompts.js'
 import {
   asVlmModel,
   asVlmProcessor,
@@ -32,28 +33,6 @@ const MODEL_NAME = 'onnx-community/Qwen3.5-2B-ONNX'
  * text, 1280 costs ~20% more time for no recall gain.
  */
 const INPUT_LONG_EDGE = 1024
-
-const PROMPT = `This image is a figure region cropped from a PDF page. Write search text for it.
-
-Output two lines, in this order:
-
-Line 1 starts with "Keywords:" and then lists the phrases, separated by semicolons.
-Line 2 starts with "Summary:" and then holds one sentence.
-
-Keywords rules:
-- Copy the text that is legible in the image: titles, axis names, legend entries, row and column names, panel labels, annotations, diagram node and step names, and numbers shown as labels.
-- Use the exact wording from the image.
-- Keep a number with the label it belongs to, printed as shown, including decimal points and units.
-- Every part of the image that carries legible text contributes at least one phrase.
-- List each phrase once.
-- For partly legible text, keep the part you can read.
-- For a table, keep its title, row names and column names; leave the cell-by-cell values out.
-- Once the legible labels are listed, write the Summary line and stop.
-
-Summary rule:
-- One sentence naming the figure type and its subject.
-
-Ground every phrase and the summary in what is visible. Where a region carries no legible text, describe it in the summary instead of supplying words for it.`
 
 /**
  * Create a `quality` profile captioner. The dispatcher has already configured
@@ -77,7 +56,7 @@ export function createQualityCaptioner(resolvedDevice: string): Captioner {
         const messages = [
           {
             role: 'user',
-            content: [{ type: 'image' }, { type: 'text', text: PROMPT }],
+            content: [{ type: 'image' }, { type: 'text', text: QUALITY_PROMPT }],
           },
         ]
         // Qwen3.5 takes a single image, not an array.
